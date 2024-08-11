@@ -1,4 +1,4 @@
-package com.roomtemperaturethermometer;
+package com.codeclub.roomtemperaturethermometer;
 
 import android.content.Context;
 import android.hardware.Sensor;

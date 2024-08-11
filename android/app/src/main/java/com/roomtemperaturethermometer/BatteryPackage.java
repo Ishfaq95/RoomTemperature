@@ -1,4 +1,4 @@
-package com.roomtemperaturethermometer;
+package com.codeclub.roomtemperaturethermometer;
 
 import com.facebook.react.ReactPackage;
 import com.facebook.react.bridge.JavaScriptModule;

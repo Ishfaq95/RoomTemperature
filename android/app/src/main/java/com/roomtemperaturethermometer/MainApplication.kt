@@ -1,7 +1,7 @@
-package com.roomtemperaturethermometer
+package com.codeclub.roomtemperaturethermometer
 
-import com.roomtemperaturethermometer.BatteryModule; 
-import com.roomtemperaturethermometer.TemperatureModule;
+import com.codeclub.roomtemperaturethermometer.BatteryModule; 
+import com.codeclub.roomtemperaturethermometer.TemperatureModule;
 import android.app.Application
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
