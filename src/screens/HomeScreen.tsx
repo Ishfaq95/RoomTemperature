@@ -24,6 +24,7 @@ import LineProgressWithTitle from "../constants/circleProgress";
 import Geolocation from "react-native-geolocation-service";
 import { FetchWeatherForcast, FetchWeatherLocation } from "../api/weatherApi";
 import { windowHeight, windowWidth } from "../constants/Dimension";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import SunPosition from "../constants/sunMoon";
 import SunCalc from "suncalc";
 import { format, parse, differenceInMinutes } from "date-fns";
@@ -39,6 +40,10 @@ const HomeScreen = () => {
   const [tempHeight, setTempHeight] = useState(0);
   const debounce = require("lodash/debounce");
   const WidthScreen = Dimensions.get("screen");
+  const [newCity, setNewCity] = useState("");
+  const [byDefaultCity, setByDefaultCity] = useState("");
+
+  const [city, setCity] = useState("");
   // const windowHeight = Dimensions.get('window').height;
   const [temperature, setTemperature] = useState<string | null>(null);
   const [convertedTemp, setConvertedTemp] = useState(`${temperature} °C`);
@@ -74,18 +79,35 @@ const HomeScreen = () => {
     setLocations([]);
     setShow(false);
     setLoading(true);
-    FetchWeatherForcast({
-      cityName: loc.name,
-      days: "7",
-    }).then((data) => {
-      setWeather(data);
-      setLoading(false);
-      // console.log('got focast data////// ', data);
-    });
+
+    // Save the selected city to AsyncStorage
+    AsyncStorage.setItem("LOCATION", loc.name)
+      .then(() => {
+        // Update the city state after saving it to AsyncStorage
+        setCity(loc.name);
+
+        // Fetch weather data for the selected city
+        FetchWeatherForcast({
+          cityName: loc.name,
+          days: "7",
+        })
+          .then((data) => {
+            setWeather(data);
+            setLoading(false);
+          })
+          .catch((error) => {
+            console.error("Error fetching weather data:", error);
+            setLoading(false);
+          });
+      })
+      .catch((error) => {
+        console.error("Error saving city to AsyncStorage:", error);
+      });
   };
+
   const handelSearch = (value: string) => {
     FetchWeatherLocation({ cityName: value }).then((data) => {
-      // console.log('got data////// ', data);
+      console.log("got data/ search///// ", data);
       setLocations(data);
     });
   };
@@ -129,40 +151,105 @@ const HomeScreen = () => {
     }
   };
 
+  // const getCurrentLocation = async () => {
+  //   const hasPermission = await requestLocationPermission();
+  //   if (!hasPermission) return;
+
+  //   Geolocation.getCurrentPosition(
+  //     (position) => {
+  //       console.log("Current Location:", position.coords);
+
+  //       const { latitude, longitude } = position.coords;
+  //       console.log("Current Location:", latitude, longitude);
+
+  //       FetchWeatherLocation({ lat: latitude, lon: longitude }).then((data) => {
+  //         if (data && data.length > 0) {
+  //           const defaultLocation = data[0];
+  //           handleLocation(defaultLocation);
+  //         }
+  //       });
+  //     },
+  //     (error) => {
+  //       // console.log(error.code, error.message);
+  //     },
+  //     { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+  //   );
+  // };
+
   const getCurrentLocation = async () => {
     const hasPermission = await requestLocationPermission();
     if (!hasPermission) return;
 
     Geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
-        // console.log('Current Location:', latitude, longitude);
+        console.log("Current Location:", position.coords);
 
-        FetchWeatherLocation({ lat: latitude, lon: longitude }).then((data) => {
-          if (data && data.length > 0) {
-            const defaultLocation = data[0];
-            handleLocation(defaultLocation);
-          }
-        });
+        const { latitude, longitude } = position.coords;
+        console.log("Latitude:", latitude, "Longitude:", longitude);
+
+        // Now we need to perform reverse geocoding to get the city name
+        reverseGeocodeLocation(latitude, longitude);
       },
       (error) => {
-        // console.log(error.code, error.message);
+        console.error("Geolocation Error:", error.message);
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
   };
+
+  // Function to call the reverse geocoding API
+  const reverseGeocodeLocation = async (latitude, longitude) => {
+    try {
+      // Example API call to OpenWeatherMap's Reverse Geocoding API
+      const apiKey = "fa62b8fcda1b42acbf04eb062d274c92"; // Replace with your API key
+      const url = `https://api.opencagedata.com/geocode/v1/json?q=${latitude}+${longitude}&key=${apiKey}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data && data.results.length > 0) {
+        const cityName =
+          data.results[0].components.city ||
+          data.results[0].components.town ||
+          data.results[0].components.village;
+        console.log("City Name from OpenCageData:", cityName);
+        setByDefaultCity(cityName);
+
+        // Call handleLocation with the city name
+        handleLocation({ name: cityName });
+      } else {
+        console.log("No city found in OpenCageData response.");
+      }
+    } catch (error) {
+      console.error("OpenCageData Reverse Geocoding Error:", error);
+    }
+  };
+
+  // useEffect to get current location when the component mounts
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
 
   useEffect(() => {
     getCurrentLocation();
   }, []);
 
   const fetchMyWeatherData = async () => {
-    FetchWeatherForcast({ cityName: "bahawalpur", days: "7" }).then((data) => {
-      // console.log('data', data.forecast.forecastday);
-
+    try {
+      const data = await FetchWeatherForcast({
+        cityName: "Lahore",
+        days: "7",
+      });
       setWeather(data);
       setLoading(false);
-    });
+      // Only set default city if there's no city saved in AsyncStorage
+      if (!city) {
+        setCity("Lahore");
+      }
+    } catch (error) {
+      console.error("Error fetching weather data for default city:", error);
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -171,6 +258,38 @@ const HomeScreen = () => {
   const handleTextDebounce = useCallback(debounce(handelSearch, 1200), []);
 
   const { current, location, forecast } = weather;
+  console.log("location?.name---////", location?.name);
+
+  useEffect(() => {
+    setNewCity(location?.name);
+  }, [location?.name]);
+
+  useEffect(() => {
+    const getStoredCity = async () => {
+      try {
+        const storedCity = await AsyncStorage.getItem("LOCATION");
+        if (storedCity) {
+          setCity(storedCity);
+
+          // Fetch weather for the stored city
+          const data = await FetchWeatherForcast({
+            cityName: storedCity,
+            days: "7",
+          });
+          setWeather(data);
+          setLoading(false);
+        } else {
+          // Fetch weather for the default city (Lahore) if no city is stored
+          await fetchMyWeatherData();
+        }
+      } catch (error) {
+        console.error("Error retrieving city or fetching weather data:", error);
+      }
+    };
+
+    getStoredCity();
+  }, []);
+
   const astro = forecast?.forecastday[0];
   // console.log('astro', astro);
 
@@ -400,10 +519,15 @@ const HomeScreen = () => {
                 style={styles.searchView}
               >
                 <Text style={styles.searchText}>
-                  {location ? location?.name : "Bahawalpur"}
+                  {newCity ? newCity : byDefaultCity}
                 </Text>
                 <Image
-                  style={{ width: 30, height: 30, tintColor: "#fff" }}
+                  style={{
+                    width: 30,
+                    height: 30,
+                    tintColor: "#fff",
+                    bottom: 4,
+                  }}
                   source={require("../assets/images/weatherImages/opt.png")}
                 />
               </TouchableOpacity>
@@ -617,17 +741,13 @@ const HomeScreen = () => {
                   )}
                 </AnimatedCircularProgress>
 
-                <View
-                  style={[
-                    styles.capTextContainer,
-                    { top: 200 / 2 + 35, left: 150 / 2 - 15 },
-                  ]}
-                >
+                <View style={[styles.capTextContainer]}>
                   <Text style={styles.capText}>
-                    {weather?.current?.condition?.text &&
+                    {weather?.current?.condition?.text}
+                    {/* {weather?.current?.condition?.text &&
                       splitTextIntoLines(weather.current.condition.text).map(
                         (line, index) => <Text key={index}>{line + "\n"}</Text>
-                      )}
+                      )} */}
                   </Text>
                 </View>
               </View>
@@ -962,14 +1082,12 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   capTextContainer: {
-    // width: (25),
-    position: "absolute",
-    flexWrap: "wrap",
+    width: 300,
     alignItems: "center",
     justifyContent: "center",
   },
   capText: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#fff",
   },
